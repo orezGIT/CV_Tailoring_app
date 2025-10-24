@@ -1,11 +1,27 @@
-# cv_tailor_pro.py
+# app.py
 """
 Professional CV Tailor - Summary, Skills, Cover Letter & LinkedIn
+Supports PDF, TXT, and DOCX files
 """
 
 import streamlit as st
 import re
 from typing import List, Dict
+import sys
+import tempfile
+import os
+
+# ---------- DEPENDENCY CHECK ----------
+def check_dependencies():
+    """Check if required packages are installed"""
+    try:
+        from PyPDF2 import PdfReader
+        from io import BytesIO
+        return True
+    except ImportError as e:
+        st.error(f"Missing dependency: {e}")
+        st.info("Please make sure all packages in requirements.txt are installed")
+        return False
 
 # ---------- CUSTOM STYLING ----------
 st.set_page_config(page_title="CV Tailor Pro", layout="wide")
@@ -91,33 +107,55 @@ st.markdown("""
         margin: 1rem 0;
         border: 2px solid #e8f5e8;
     }
-    .download-btn {
-        background: linear-gradient(135deg, #27ae60, #219653) !important;
-    }
-    .download-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(39, 174, 96, 0.4);
-    }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🎯 Professional CV Tailor")
-st.markdown("### Transform your CV with tailored content for each job application")
-
 # ---------- TEXT EXTRACTION ----------
 def extract_text_from_file(uploaded_file):
-    """Extract text from uploaded file"""
+    """Extract text from uploaded file with error handling - PDF, TXT, and DOCX"""
     try:
         if uploaded_file.name.lower().endswith('.pdf'):
-            from PyPDF2 import PdfReader
-            from io import BytesIO
-            reader = PdfReader(BytesIO(uploaded_file.read()))
-            return "\n".join([page.extract_text() or "" for page in reader.pages])
-        else:
+            # Check if PyPDF2 is available
+            try:
+                from PyPDF2 import PdfReader
+                from io import BytesIO
+                reader = PdfReader(BytesIO(uploaded_file.read()))
+                text = "\n".join([page.extract_text() or "" for page in reader.pages])
+                return text if text.strip() else "No text could be extracted from the PDF"
+            except ImportError:
+                return "PDF processing unavailable. Please install PyPDF2."
+        
+        elif uploaded_file.name.lower().endswith('.txt'):
+            # For text files
             return uploaded_file.getvalue().decode('utf-8')
+        
+        elif uploaded_file.name.lower().endswith('.docx'):
+            # For DOCX files
+            try:
+                import docx2txt
+                # Save uploaded file temporarily
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
+                    tmp_file.write(uploaded_file.getvalue())
+                    tmp_file_path = tmp_file.name
+                
+                # Extract text using docx2txt
+                text = docx2txt.process(tmp_file_path)
+                
+                # Clean up temporary file
+                os.unlink(tmp_file_path)
+                
+                return text if text.strip() else "No text could be extracted from the DOCX file"
+                
+            except ImportError:
+                return "DOCX processing unavailable. Please install python-docx or docx2txt."
+            except Exception as e:
+                return f"Error processing DOCX file: {str(e)}"
+        
+        else:
+            return "Unsupported file type. Please upload PDF, TXT, or DOCX files."
+            
     except Exception as e:
-        st.error(f"Error reading file: {e}")
-        return ""
+        return f"Error reading file: {str(e)}"
 
 # ---------- SMART CONTENT GENERATION ----------
 def extract_sections(text: str) -> Dict[str, List[str]]:
@@ -313,79 +351,93 @@ Data Scientist
     return message.strip()
 
 # ---------- MAIN APPLICATION ----------
-st.markdown('<div class="info-box">📝 Upload your CV and job details to get tailored content</div>', unsafe_allow_html=True)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.header("1. Upload Your CV")
-    uploaded_file = st.file_uploader("Choose PDF or text file", type=["pdf", "txt"], key="cv_upload")
-
-with col2:
-    st.header("2. Job Details")
-    job_title = st.text_input("Job Title*", placeholder="e.g., Data Scientist, ML Engineer")
-    company_name = st.text_input("Company Name*", placeholder="e.g., Google, Amazon, NHS")
-    job_desc = st.text_area("Job Description*", height=150, placeholder="Paste the full job description here...")
-
-if uploaded_file and job_desc and company_name and job_title:
+def main():
+    st.title("🎯 Professional CV Tailor")
+    st.markdown("### Transform your CV with AI-powered tailored content for each job application")
     
-    cv_text = extract_text_from_file(uploaded_file)
+    st.markdown('<div class="info-box">📝 Upload your CV (PDF, TXT, or DOCX) and job details to get tailored content</div>', unsafe_allow_html=True)
     
-    if st.button("🚀 Generate Tailored Content", use_container_width=True):
-        with st.spinner("Creating your professional application package..."):
-            
-            # Generate all tailored content
-            new_summary = generate_tailored_summary(job_desc, cv_text)
-            new_skills = generate_tailored_skills(job_desc, cv_text)
-            cover_letter = generate_cover_letter(job_desc, cv_text, company_name, job_title)
-            linkedin_msg = generate_linkedin_message(job_title, company_name, job_desc)
-            
-            st.markdown('<div class="success-box">✅ Your tailored content is ready! Copy and use these sections in your application.</div>', unsafe_allow_html=True)
-            
-            # Display in tabs for better organization
-            tab1, tab2, tab3, tab4 = st.tabs(["🎯 Professional Summary", "🛠️ Skills Section", "✉️ Cover Letter", "💼 LinkedIn Message"])
-            
-            with tab1:
-                st.markdown('<div class="tab-container">', unsafe_allow_html=True)
-                st.subheader("Tailored Professional Summary")
-                st.text_area("Copy this summary to your CV:", new_summary, height=200, key="summary_area")
-                st.download_button("📄 Download Summary", new_summary, "professional_summary.txt", "text/plain", use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-            with tab2:
-                st.markdown('<div class="tab-container">', unsafe_allow_html=True)
-                st.subheader("Tailored Skills Section")
-                st.text_area("Copy these skills to your CV:", new_skills, height=200, key="skills_area")
-                st.download_button("📄 Download Skills", new_skills, "tailored_skills.txt", "text/plain", use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-            with tab3:
-                st.markdown('<div class="tab-container">', unsafe_allow_html=True)
-                st.subheader("Professional Cover Letter")
-                st.text_area("Use this cover letter:", cover_letter, height=400, key="cover_area")
-                st.download_button("📄 Download Cover Letter", cover_letter, "cover_letter.txt", "text/plain", use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-            with tab4:
-                st.markdown('<div class="tab-container">', unsafe_allow_html=True)
-                st.subheader("LinkedIn Connection Message")
-                st.text_area("Use this LinkedIn message:", linkedin_msg, height=300, key="linkedin_area")
-                st.download_button("📄 Download LinkedIn Message", linkedin_msg, "linkedin_message.txt", "text/plain", use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Show original content for comparison
-            with st.expander("🔍 View Original CV Content (for reference)"):
-                original_sections = extract_sections(cv_text)
-                if original_sections['summary']:
-                    st.write("**Original Summary:**")
-                    st.text(" ".join(original_sections['summary'][:3]))
-                if original_sections['skills']:
-                    st.write("**Original Skills (sample):**")
-                    st.text("\n".join(original_sections['skills'][:5]))
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.header("1. Upload Your CV")
+        uploaded_file = st.file_uploader("Choose PDF, TXT, or DOCX file", type=["pdf", "txt", "docx"], key="cv_upload")
+        st.caption("Supported formats: PDF, TXT, DOCX")
+    
+    with col2:
+        st.header("2. Job Details")
+        job_title = st.text_input("Job Title*", placeholder="e.g., Data Scientist, ML Engineer")
+        company_name = st.text_input("Company Name*", placeholder="e.g., Google, Amazon, NHS")
+        job_desc = st.text_area("Job Description*", height=150, placeholder="Paste the full job description here...")
+    
+    if uploaded_file and job_desc and company_name and job_title:
+        
+        cv_text = extract_text_from_file(uploaded_file)
+        
+        # Check if file was processed successfully
+        if any(cv_text.startswith(msg) for msg in ["Unsupported file type", "Error reading file", "No text could be extracted", "processing unavailable"]):
+            st.error(cv_text)
+        else:
+            if st.button("🚀 Generate Tailored Content", use_container_width=True):
+                with st.spinner("Creating your professional application package..."):
+                    
+                    # Generate all tailored content
+                    new_summary = generate_tailored_summary(job_desc, cv_text)
+                    new_skills = generate_tailored_skills(job_desc, cv_text)
+                    cover_letter = generate_cover_letter(job_desc, cv_text, company_name, job_title)
+                    linkedin_msg = generate_linkedin_message(job_title, company_name, job_desc)
+                    
+                    st.markdown('<div class="success-box">✅ Your tailored content is ready! Copy and use these sections in your application.</div>', unsafe_allow_html=True)
+                    
+                    # Display in tabs for better organization
+                    tab1, tab2, tab3, tab4 = st.tabs(["🎯 Professional Summary", "🛠️ Skills Section", "✉️ Cover Letter", "💼 LinkedIn Message"])
+                    
+                    with tab1:
+                        st.markdown('<div class="tab-container">', unsafe_allow_html=True)
+                        st.subheader("Tailored Professional Summary")
+                        st.text_area("Copy this summary to your CV:", new_summary, height=200, key="summary_area")
+                        st.download_button("📄 Download Summary", new_summary, "professional_summary.txt", "text/plain", use_container_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                    with tab2:
+                        st.markdown('<div class="tab-container">', unsafe_allow_html=True)
+                        st.subheader("Tailored Skills Section")
+                        st.text_area("Copy these skills to your CV:", new_skills, height=200, key="skills_area")
+                        st.download_button("📄 Download Skills", new_skills, "tailored_skills.txt", "text/plain", use_container_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                    with tab3:
+                        st.markdown('<div class="tab-container">', unsafe_allow_html=True)
+                        st.subheader("Professional Cover Letter")
+                        st.text_area("Use this cover letter:", cover_letter, height=400, key="cover_area")
+                        st.download_button("📄 Download Cover Letter", cover_letter, "cover_letter.txt", "text/plain", use_container_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                    with tab4:
+                        st.markdown('<div class="tab-container">', unsafe_allow_html=True)
+                        st.subheader("LinkedIn Connection Message")
+                        st.text_area("Use this LinkedIn message:", linkedin_msg, height=300, key="linkedin_area")
+                        st.download_button("📄 Download LinkedIn Message", linkedin_msg, "linkedin_message.txt", "text/plain", use_container_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    
+                    # Show original content for comparison
+                    with st.expander("🔍 View Original CV Content (for reference)"):
+                        original_sections = extract_sections(cv_text)
+                        if original_sections['summary']:
+                            st.write("**Original Summary:**")
+                            st.text(" ".join(original_sections['summary'][:3]))
+                        if original_sections['skills']:
+                            st.write("**Original Skills (sample):**")
+                            st.text("\n".join(original_sections['skills'][:5]))
+    
+    else:
+        st.info("👆 Please upload your CV (PDF, TXT, or DOCX) and fill in all job details to get started.")
+    
+    # Footer
+    st.markdown("---")
+    st.markdown("💡 **Pro Tip:** Always customize the generated content with your specific achievements and experiences!")
+    st.markdown("⚡ **Built with Streamlit** • **Deployment Ready**")
 
-else:
-    st.info("👆 Please upload your CV and fill in all job details to get started.")
-
-# Footer
-st.markdown("---")
-st.markdown("💡 **Pro Tip:** Always customize the generated content with your specific achievements and experiences!")
+# Run the app
+if __name__ == "__main__":
+    main()
