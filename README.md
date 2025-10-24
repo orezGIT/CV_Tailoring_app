@@ -30,3 +30,6 @@ An AI-powered web application that automatically tailors your CV content for spe
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
+
+🎯 Live Demo
+Live Application: https://cvtailoringapp-dtzvd3zvjahjct5kgahb8b.streamlit.app/
